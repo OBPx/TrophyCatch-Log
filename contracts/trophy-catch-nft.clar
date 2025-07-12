@@ -38,6 +38,9 @@
   verified-guide: principal
 })
 
+;; Map to track NFT count per owner for efficient querying
+(define-map owner-nft-count principal uint)
+
 ;; Variable to track the last token ID
 (define-data-var last-token-id uint u0)
 
@@ -51,7 +54,7 @@
 (define-public (certify-guide (guide principal))
   (begin
     (asserts! (is-eq tx-sender CONTRACT_OWNER) (err ERR_NOT_AUTHORIZED))
-    (asserts! (not (is-some (map-get? certified-guides guide))) (err ERR_ALREADY_CERTIFIED))
+    (asserts! (is-none (map-get? certified-guides guide)) (err ERR_ALREADY_CERTIFIED))
     (ok (map-set certified-guides guide true))
   )
 )
@@ -67,6 +70,24 @@
 )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Helper Functions
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; --- Update owner NFT count ---
+;; Internal function to maintain accurate NFT counts per owner
+(define-private (update-owner-count (owner principal) (increment bool))
+  (let ((current-count (default-to u0 (map-get? owner-nft-count owner))))
+    (if increment
+      (map-set owner-nft-count owner (+ current-count u1))
+      (if (> current-count u0)
+        (map-set owner-nft-count owner (- current-count u1))
+        (map-delete owner-nft-count owner)
+      )
+    )
+  )
+)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Public Functions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -75,7 +96,7 @@
 (define-public (mint-trophy (angler principal) (species (string-ascii 32)) (weight-grams uint) (length-cm uint) (catch-location (string-ascii 64)) (angler-note (string-utf8 256)) (media-url (string-ascii 128)))
   (let
     ((guide tx-sender)
-     (is-certified (is-some (map-get? certified-guides guide))))
+     (is-certified (default-to false (map-get? certified-guides guide))))
 
     (asserts! is-certified (err ERR_GUIDE_NOT_CERTIFIED))
     (asserts! (> (len species) u0) (err ERR_METADATA_INVALID))
@@ -93,6 +114,7 @@
             media-url: media-url,
             verified-guide: guide
           })
+          (update-owner-count angler true)
           (var-set last-token-id token-id)
           (ok token-id)
         )
@@ -110,7 +132,14 @@
     (asserts! (is-some (nft-get-owner? trophy-catch token-id)) (err ERR_NFT_NOT_FOUND))
     (asserts! (is-eq (some sender) (nft-get-owner? trophy-catch token-id)) (err ERR_SENDER_NOT_OWNER))
 
-    (nft-transfer? trophy-catch token-id sender recipient)
+    (match (nft-transfer? trophy-catch token-id sender recipient)
+      success (begin
+        (update-owner-count sender false)
+        (update-owner-count recipient true)
+        (ok success)
+      )
+      error (err error)
+    )
   )
 )
 
@@ -128,7 +157,6 @@
     (ok true)
   )
 )
-
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Read-Only Functions
@@ -156,7 +184,14 @@
   (var-get last-token-id)
 )
 
-;; --- Get the balance of a specific owner ---
+;; --- Get the NFT count of a specific owner ---
+;; Returns the number of trophy NFTs owned by a principal
 (define-read-only (get-balance (owner principal))
-    (nft-get-balance? trophy-catch owner)
+  (default-to u0 (map-get? owner-nft-count owner))
+)
+
+;; --- Get contract owner ---
+;; Returns the contract owner principal
+(define-read-only (get-contract-owner)
+  CONTRACT_OWNER
 )
