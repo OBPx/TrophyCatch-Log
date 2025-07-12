@@ -16,6 +16,15 @@
 (define-constant ERR_SENDER_NOT_OWNER u106)
 (define-constant ERR_METADATA_LOCKED u107)
 (define-constant ERR_METADATA_INVALID u108)
+(define-constant ERR_INVALID_WEIGHT u109)
+(define-constant ERR_INVALID_LENGTH u110)
+(define-constant ERR_INVALID_RECIPIENT u111)
+
+;; Validation constants
+(define-constant MAX_WEIGHT_GRAMS u1000000) ;; 1000kg max
+(define-constant MAX_LENGTH_CM u1000) ;; 10 meters max
+(define-constant MIN_WEIGHT_GRAMS u1) ;; 1 gram min
+(define-constant MIN_LENGTH_CM u1) ;; 1 cm min
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Data Storage
@@ -87,6 +96,18 @@
   )
 )
 
+;; --- Validate input parameters ---
+(define-private (validate-trophy-data (species (string-ascii 32)) (weight-grams uint) (length-cm uint) (catch-location (string-ascii 64)) (media-url (string-ascii 128)))
+  (begin
+    (asserts! (> (len species) u0) (err ERR_METADATA_INVALID))
+    (asserts! (> (len media-url) u0) (err ERR_METADATA_INVALID))
+    (asserts! (> (len catch-location) u0) (err ERR_METADATA_INVALID))
+    (asserts! (and (>= weight-grams MIN_WEIGHT_GRAMS) (<= weight-grams MAX_WEIGHT_GRAMS)) (err ERR_INVALID_WEIGHT))
+    (asserts! (and (>= length-cm MIN_LENGTH_CM) (<= length-cm MAX_LENGTH_CM)) (err ERR_INVALID_LENGTH))
+    (ok true)
+  )
+)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Public Functions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -99,8 +120,7 @@
      (is-certified (default-to false (map-get? certified-guides guide))))
 
     (asserts! is-certified (err ERR_GUIDE_NOT_CERTIFIED))
-    (asserts! (> (len species) u0) (err ERR_METADATA_INVALID))
-    (asserts! (> (len media-url) u0) (err ERR_METADATA_INVALID))
+    (unwrap! (validate-trophy-data species weight-grams length-cm catch-location media-url) (err ERR_METADATA_INVALID))
 
     (let ((token-id (+ (var-get last-token-id) u1)))
       (match (nft-mint? trophy-catch token-id angler)
@@ -129,6 +149,7 @@
 (define-public (transfer-trophy (token-id uint) (sender principal) (recipient principal))
   (begin
     (asserts! (is-eq tx-sender sender) (err ERR_NOT_AUTHORIZED))
+    (asserts! (not (is-eq sender recipient)) (err ERR_INVALID_RECIPIENT))
     (asserts! (is-some (nft-get-owner? trophy-catch token-id)) (err ERR_NFT_NOT_FOUND))
     (asserts! (is-eq (some sender) (nft-get-owner? trophy-catch token-id)) (err ERR_SENDER_NOT_OWNER))
 
@@ -194,4 +215,15 @@
 ;; Returns the contract owner principal
 (define-read-only (get-contract-owner)
   CONTRACT_OWNER
+)
+
+;; --- Get validation constants ---
+;; Returns the validation limits for trophy data
+(define-read-only (get-validation-limits)
+  {
+    max-weight-grams: MAX_WEIGHT_GRAMS,
+    min-weight-grams: MIN_WEIGHT_GRAMS,
+    max-length-cm: MAX_LENGTH_CM,
+    min-length-cm: MIN_LENGTH_CM
+  }
 )
