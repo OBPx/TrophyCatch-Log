@@ -96,18 +96,6 @@
   )
 )
 
-;; --- Validate input parameters ---
-(define-private (validate-trophy-data (species (string-ascii 32)) (weight-grams uint) (length-cm uint) (catch-location (string-ascii 64)) (media-url (string-ascii 128)))
-  (begin
-    (asserts! (> (len species) u0) (err ERR_METADATA_INVALID))
-    (asserts! (> (len media-url) u0) (err ERR_METADATA_INVALID))
-    (asserts! (> (len catch-location) u0) (err ERR_METADATA_INVALID))
-    (asserts! (and (>= weight-grams MIN_WEIGHT_GRAMS) (<= weight-grams MAX_WEIGHT_GRAMS)) (err ERR_INVALID_WEIGHT))
-    (asserts! (and (>= length-cm MIN_LENGTH_CM) (<= length-cm MAX_LENGTH_CM)) (err ERR_INVALID_LENGTH))
-    (ok true)
-  )
-)
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Public Functions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -119,8 +107,15 @@
     ((guide tx-sender)
      (is-certified (default-to false (map-get? certified-guides guide))))
 
+    ;; Validate guide certification
     (asserts! is-certified (err ERR_GUIDE_NOT_CERTIFIED))
-    (unwrap! (validate-trophy-data species weight-grams length-cm catch-location media-url) (err ERR_METADATA_INVALID))
+
+    ;; Validate input parameters inline to avoid static analysis warnings
+    (asserts! (> (len species) u0) (err ERR_METADATA_INVALID))
+    (asserts! (> (len media-url) u0) (err ERR_METADATA_INVALID))
+    (asserts! (> (len catch-location) u0) (err ERR_METADATA_INVALID))
+    (asserts! (and (>= weight-grams MIN_WEIGHT_GRAMS) (<= weight-grams MAX_WEIGHT_GRAMS)) (err ERR_INVALID_WEIGHT))
+    (asserts! (and (>= length-cm MIN_LENGTH_CM) (<= length-cm MAX_LENGTH_CM)) (err ERR_INVALID_LENGTH))
 
     (let ((token-id (+ (var-get last-token-id) u1)))
       (match (nft-mint? trophy-catch token-id angler)
